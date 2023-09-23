@@ -1,0 +1,272 @@
+---
+title: "Spanish Influenza"
+author: "kennethLam"
+date: "2023-03-10"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(boot)
+library(dplyr)
+library(tidyverse)
+if(file.exists("CLS_influenza.rda")){
+  load("CLS_influenza.rda")}
+data = influenza
+head(data)
+library(ggplot2)
+attach(data)
+```
+
+# Data
+
+Expand: Our data set has 185 variables and 1,771 data entries. We could choose whether we want to group by city, county, or state. We have mortality total and infant mortality total. Population variables to standardize a city's mortality rate per capita.
+
+Hydro, steam 30, 50 mile?
+
+```{r}
+# Alternatives
+# poor water quality = typhoidave
+# city density = pop1921
+# delayed onset = (point_x,point_y) data points - Citi Bike MC samplings
+# public health effort = ?
+# race = swhite1920
+# income = mwage_bls901920
+```
+
+Possible confounding variables: poor water quality (typhoid mortality), city's density, race, wages, delayed onset, public health effort.
+
+Researchers have claimed that the virus weakened over the course of the fall of 1918, so that locations that experienced a delayed onset were exposed to a less virulent strain. The ability of public officials to respond to the outbreak may also have been related to the timing of local onset. We assess whether factors related to the timing of onset were related to pandemic mortality.
+
+Some researchers have argued that other local public interventions, such as quarantines and bans on public gatherings, influenced severity (Markel et al. 2007). To assess the role of the local public health effort, we use data from Markel et al. (2007) on local interventions for a subsample of 32 cities and construct indicators for early and long-term interventions following their classification.
+
+# EDA
+
+```{r}
+data.copy = data.frame(pop1910, typhoidave, rlmort18, rlinfmort18, tercilegrp, swhite1910)
+
+head(data.copy)
+table(data.copy$tercilegrp)
+
+nrow(data.copy)
+data.copy = na.omit(data.copy)
+nrow(data.copy)
+```
+
+```{r}
+null.mod = lm(rlinfmort18 ~ tercilegrp, data=data.copy)
+summary(null.mod)
+
+alt.mod = lm(rlinfmort18 ~ .-tercilegrp-rlmort18, data=data.copy)
+summary(alt.mod)
+
+full.mod = lm(rlinfmort18 ~ .-rlmort18, data=data.copy)
+summary(full.mod)
+
+anova(null.mod, full.mod)
+anova(alt.mod, full.mod)
+```
+
+```{r}
+null.mod.all = lm(rlmort18 ~ tercilegrp, data=data.copy)
+summary(null.mod)
+
+alt.mod.all = lm(rlmort18 ~ .-tercilegrp-rlinfmort18, data=data.copy)
+summary(alt.mod)
+
+full.mod.all = lm(rlmort18 ~ .-rlinfmort18, data=data.copy)
+summary(full.mod)
+
+anova(null.mod.all, full.mod.all)
+anova(alt.mod.all, full.mod.all)
+```
+
+```{r}
+plot(resid(null.mod))
+plot(resid(alt.mod))
+plot(resid(full.mod))
+```
+
+```{r}
+plot(null.mod)
+plot(alt.mod)
+plot(full.mod)
+```
+
+```{r}
+cor(data.copy[, c(1,2,5,6)])
+```
+
+```{r}
+plot(data.copy$tercilegrp, data.copy$rlinfmort18, main="Excess Infant Mortality Rates vs. Coal Capacity Terciles", xlab="Coal Capacity Tercile (Low, Medium, High)", ylab='Excess Infant Mortality Rate', sub='Figure 2')
+abline(lm(data.copy$rlinfmort18 ~ data.copy$tercilegrp))
+```
+
+```{r}
+plot(data.copy$rlinfmort18 ~ data.copy$typhoidave, main="Excess Infant Mortality Rates vs. Poor Water Quality", xlab="Typhoid Average", ylab='Excess Infant Mortality Rate', sub='Figure 6')
+abline(lm(data.copy$rlinfmort18 ~ data.copy$typhoidave))
+```
+
+```{r}
+plot(resid(null.mod.all))
+plot(resid(alt.mod.all))
+plot(resid(full.mod.all))
+
+plot(null.mod.all)
+plot(alt.mod.all)
+plot(full.mod.all)
+
+plot(data.copy$tercilegrp, data.copy$rlmort18, main="Excess Mortality Rates vs. Coal Capacity Terciles", xlab="Coal Capacity Tercile (Low, Medium, High)", ylab='Excess Mortality Rate', sub='Figure 2')
+abline(lm(data.copy$rlmort18 ~ data.copy$tercilegrp))
+
+plot(data.copy$rlmort18 ~ data.copy$typhoidave, main="Excess Mortality Rates vs. Poor Water Quality", xlab="Typhoid Average", ylab='Excess Mortality Rate', sub='Figure 6')
+abline(lm(data.copy$rlmort18 ~ data.copy$typhoidave))
+```
+
+# Results
+
+```{r}
+# Resample bootstrap
+
+B = 1000
+null.mse = c()
+alt.mse = c()
+full.mse = c()
+
+MSE_stat <- function(mod, bs) {
+  mean((bs$rlinfmort18 - predict(mod, newdata=bs))^2)
+}
+
+for (i in 1:B) {
+  boot.sample = sample_n(data.copy, nrow(data.copy), replace=TRUE)
+
+  null.mod = lm(rlinfmort18 ~ tercilegrp, data=boot.sample)
+  null.mse[i] = MSE_stat(null.mod, boot.sample)
+
+  alt.mod = lm(rlinfmort18 ~ .-tercilegrp, data=boot.sample)
+  alt.mse[i] = MSE_stat(alt.mod, boot.sample)
+
+  full.mod = lm(rlinfmort18 ~ ., data=boot.sample)
+  full.mse[i] = MSE_stat(full.mod, boot.sample)
+}
+
+(null.ci = quantile(null.mse, c(0.025, 0.975)))
+(alt.ci = quantile(alt.mse, c(0.025, 0.975)))
+(full.ci = quantile(full.mse, c(0.025, 0.975)))
+```
+
+Null model is significantly worse.
+
+```{r}
+# Cross-validation MSE
+# CV implementation: p.27 of CV slides
+
+set.seed(0)
+
+MSE_stat <- function(mod, bs) {
+  mean((bs$rlinfmort18 - predict(mod, newdata=bs))^2)
+}
+
+null.mse = c()
+alt.mse = c()
+full.mse = c()
+
+for(i in 1:1000) {
+  N <- nrow(data.copy)
+  train_idx <- sample(seq(N), size=floor(0.7*N))
+  train <- data.copy[train_idx,]
+  test <- data.copy[-train_idx,]
+  
+  null.train.mod = lm(rlinfmort18 ~ tercilegrp, data=train)
+  
+  alt.train.mod = lm(rlinfmort18 ~ pop1910 + swhite1910 +typhoidave, data=train)
+  
+  full.train.mod = lm(rlinfmort18 ~ tercilegrp + pop1910 + swhite1910 + typhoidave, data=train)
+  
+  null.mse[i] = MSE_stat(null.train.mod, test)
+  alt.mse[i] = MSE_stat(alt.train.mod, test)
+  full.mse[i] = MSE_stat(full.train.mod, test)
+}
+
+(null.ci = quantile(null.mse, c(0.025, 0.975)))
+(alt.ci = quantile(alt.mse, c(0.025, 0.975)))
+(full.ci = quantile(full.mse, c(0.025, 0.975)))
+```
+
+None of the MSEs have a statistically significant difference.
+
+```{r}
+# Resample bootstrap
+
+B = 1000
+null.mse = c()
+alt.mse = c()
+full.mse = c()
+
+MSE_stat <- function(mod, bs) {
+  mean((bs$rlmort18 - predict(mod, newdata=bs))^2)
+}
+
+for (i in 1:B) {
+  boot.sample = sample_n(data.copy, nrow(data.copy), replace=TRUE)
+
+  null.mod = lm(rlmort18 ~ tercilegrp, data=boot.sample)
+  null.mse[i] = MSE_stat(null.mod.all, boot.sample)
+
+  alt.mod = lm(rlmort18 ~ .-tercilegrp-rlinfmort18, data=boot.sample)
+  alt.mse[i] = MSE_stat(alt.mod.all, boot.sample)
+
+  full.mod = lm(rlmort18 ~ .-rlinfmort18, data=boot.sample)
+  full.mse[i] = MSE_stat(full.mod.all, boot.sample)
+}
+
+(null.ci = quantile(null.mse, c(0.025, 0.975)))
+(alt.ci = quantile(alt.mse, c(0.025, 0.975)))
+(full.ci = quantile(full.mse, c(0.025, 0.975)))
+```
+
+Full model is significantly better.
+
+```{r}
+set.seed(0)
+
+MSE_stat <- function(mod, bs) {
+  mean((bs$rlmort18 - predict(mod, newdata=bs))^2)
+}
+
+null.mse = c()
+alt.mse = c()
+full.mse = c()
+
+for(i in 1:1000) {
+  N <- nrow(data.copy)
+  train_idx <- sample(seq(N), size=floor(0.7*N))
+  train <- data.copy[train_idx,]
+  test <- data.copy[-train_idx,]
+  
+  null.train.mod = lm(rlmort18 ~ tercilegrp, data=train)
+  
+  alt.train.mod = lm(rlmort18 ~ pop1910 + swhite1910 + typhoidave, data=train)
+  
+  full.train.mod = lm(rlmort18 ~ tercilegrp + pop1910 + swhite1910 + typhoidave, data=train)
+  
+  null.mse[i] = MSE_stat(null.train.mod, test)
+  alt.mse[i] = MSE_stat(alt.train.mod, test)
+  full.mse[i] = MSE_stat(full.train.mod, test)
+}
+
+(null.ci = quantile(null.mse, c(0.025, 0.975)))
+(alt.ci = quantile(alt.mse, c(0.025, 0.975)))
+(full.ci = quantile(full.mse, c(0.025, 0.975)))
+```
+
+None of the MSEs have a statistically significant difference.
+
+Bootstrapping tended to favor the full model.
+
+Cross-Validation did not favor any model. Cross-Validation tests on unseen data so I will put more weight towards that.
